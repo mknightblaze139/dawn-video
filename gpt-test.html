@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dawn 1x1 Video Test</title>
+<style>
+  body { margin: 0; font: 17px/1.6 Georgia, serif; background: #fff; color: #222; }
+  article { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 30px; line-height: 1.25; }
+  .note { font: 13px system-ui, sans-serif; background: #fff6d6; padding: 10px 12px; border-radius: 6px; }
+</style>
+
+<!-- ===== Google Publisher Tag ===== -->
+<script async src="https://securepubads.g.doubleclick.net/tag/js/gpt.js"></script>
+<script>
+  /* CHANGE THIS to your 1x1 ad unit path:  /NETWORK_CODE/ad_unit_code */
+  var ONE_BY_ONE_UNIT = '/1029551/dawn_video_1x1';
+
+  window.googletag = window.googletag || { cmd: [] };
+  googletag.cmd.push(function () {
+    googletag.defineSlot(ONE_BY_ONE_UNIT, [1, 1], 'dawn-video-slot')
+             .addService(googletag.pubads());
+    googletag.pubads().enableSingleRequest();
+    googletag.enableServices();
+  });
+</script>
+</head>
+<body>
+<article>
+  <p class="note">Test page: the video player appears below the first paragraph only when your
+  1x1 line item serves the creative from <b>gam-1x1-creative.html</b>.
+  Add <b>?google_console=1</b> to the URL and press Ctrl+F10 to open GAM's debug panel.</p>
+
+  <h1>Manchester United boss Carrick addresses Bruno Fernandes captaincy row</h1>
+  <p>Manchester United manager Michael Carrick has accepted responsibility for the club's poor run
+  of form following a 4-1 Champions League defeat to Como.</p>
+
+  <!-- ===== The 1x1 slot: the player is placed here ===== -->
+  <div id="dawn-video-slot">
+    <script>googletag.cmd.push(function () { googletag.display('dawn-video-slot'); });</script>
+  </div>
+
+  <p>Speaking at a press conference, Carrick acknowledged supporters' frustrations and insisted he
+  remains confident the team can rediscover its identity.</p>
+  <p>Carrick also denied that the dressing room was divided after captain Bruno Fernandes appeared
+  to question the team's tactics.</p>
+  <p style="height:600px"></p>
+</article>
+</body>
+</html>

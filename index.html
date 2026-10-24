@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dawn Video Player (IMA)</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee;
+         display: flex; justify-content: center; padding: 24px; }
+  .wrap { width: 100%; max-width: 960px; }
+  .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  .player video { width: 100%; height: 100%; display: block; }
+  /* IMA renders ads into this layer, on top of the video */
+  #ad-container { position: absolute; inset: 0; pointer-events: none; }
+  #play-btn { position: absolute; inset: 0; margin: auto; width: 84px; height: 84px; z-index: 3;
+              border-radius: 50%; border: 0; background: rgba(0,0,0,.65); color: #fff;
+              font-size: 34px; cursor: pointer; display: none; }
+  #unmute-btn { position: absolute; left: 12px; bottom: 56px; z-index: 3; display: none;
+                border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer;
+                background: rgba(0,0,0,.75); color: #fff; font-size: 14px; }
+  #log { font: 12px/1.5 monospace; color: #8c8; margin-top: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="player" id="player">
+    <!-- muted + playsinline are required for autoplay on mobile and desktop -->
+    <video id="content-video" muted playsinline preload="metadata"></video>
+    <div id="ad-container"></div>
+    <button id="unmute-btn">&#128263; Tap to unmute</button>
+    <button id="play-btn" aria-label="Play">&#9654;</button>
+  </div>
+  <div id="log"></div>
+</div>
+
+<!-- Google IMA SDK -->
+<script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+<script>
+/* ================= CONFIG =================
+   Replace adTagUrl with the tag from your GAM video ad unit.
+   Keep "correlator=" and "description_url=" at the end; they are filled in automatically.
+   The default below is Google's public test tag.
+   IMA reports autoplay + muted to GAM automatically (vpa / vpmute signals),
+   so buyers know exactly what kind of inventory this is. */
+const CONFIG = {
+  adTagUrl: 'https://pubads.g.doubleclick.net/gampad/ads?sz=1x1|300x250|640x480|640x480|300x250&iu=/1029551/dawn_video_preroll&env=vp&impl=s&gdfp_req=1&output=vast&unviewed_position_start=1&url=[referrer_url]&description_url=[description_url]&correlator=[timestamp]',
+  contentUrl: 'carrick.mp4',   // your video file, in this same folder
+  startWhenVisible: 0.5   // autoplay once 50% of the player is on screen
+};
+
+const video       = document.getElementById('content-video');
+const adContainer = document.getElementById('ad-container');
+const playBtn     = document.getElementById('play-btn');
+const unmuteBtn   = document.getElementById('unmute-btn');
+const player      = document.getElementById('player');
+const logEl       = document.getElementById('log');
+
+let adDisplayContainer, adsLoader, adsManager;
+let started = false;
+let contentEnded = false;
+let adPlaying = false;
+
+function log(msg) { logEl.textContent += msg + '\n'; console.log('[player]', msg); }
+
+video.src = CONFIG.contentUrl;
+video.muted = true;
+
+const imaReady = typeof google !== 'undefined' && google.ima;
+if (imaReady) setUpIMA(); else log('IMA SDK not loaded (ad blocker?) - content only.');
+
+/* ---------- Autoplay when the player scrolls into view ---------- */
+const observer = new IntersectionObserver(entries => {
+  if (!started && entries[0].isIntersecting) {
+    started = true;
+    observer.disconnect();
+    start();
+  }
+}, { threshold: CONFIG.startWhenVisible });
+observer.observe(player);
+
+function start() {
+  unmuteBtn.style.display = 'block';
+  if (!imaReady) { playContent(); return; }
+  adDisplayContainer.initialize();
+  video.load();
+  requestAds();
+}
+
+/* ---------- Unmute ---------- */
+unmuteBtn.onclick = () => {
+  video.muted = false;
+  if (adsManager) adsManager.setVolume(1);
+  unmuteBtn.style.display = 'none';
+};
+// If the viewer unmutes with the native controls instead, hide our button.
+video.addEventListener('volumechange', () => {
+  if (!video.muted) unmuteBtn.style.display = 'none';
+});
+
+/* ---------- Fallback if the browser still blocks autoplay ---------- */
+playBtn.onclick = () => {
+  playBtn.style.display = 'none';
+  video.play();
+};
+
+/* ---------- IMA ---------- */
+function setUpIMA() {
+  adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, video);
+  adsLoader = new google.ima.AdsLoader(adDisplayContainer);
+  adsLoader.addEventListener(
+    google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, onAdsManagerLoaded, false);
+  adsLoader.addEventListener(
+    google.ima.AdErrorEvent.Type.AD_ERROR, onAdError, false);
+
+  // Tell IMA when content finishes so postrolls can play.
+  video.addEventListener('ended', () => {
+    if (adPlaying) return;
+    contentEnded = true;
+    adsLoader.contentComplete();
+  });
+}
+
+function buildAdTag() {
+  const pageUrl = encodeURIComponent(location.href);
+  return CONFIG.adTagUrl
+    .replace('[timestamp]', Date.now())
+    .replace('[description_url]', pageUrl)
+    .replace('[referrer_url]', pageUrl)
+    .replace(/([?&]correlator=)(?=&|$)/, '$1' + Date.now())
+    .replace(/([?&]description_url=)(?=&|$)/, '$1' + pageUrl);
+}
+
+function requestAds() {
+  const req = new google.ima.AdsRequest();
+  req.adTagUrl = buildAdTag();
+  req.linearAdSlotWidth = player.clientWidth;
+  req.linearAdSlotHeight = player.clientHeight;
+  req.nonLinearAdSlotWidth = player.clientWidth;
+  req.nonLinearAdSlotHeight = Math.floor(player.clientHeight / 3);
+  req.setAdWillAutoPlay(true);   // starts without a click
+  req.setAdWillPlayMuted(true);  // starts muted
+  adsLoader.requestAds(req);
+  log('Ad request sent (autoplay, muted).');
+}
+
+function onAdsManagerLoaded(e) {
+  const settings = new google.ima.AdsRenderingSettings();
+  settings.restoreCustomPlaybackStateOnAdBreakComplete = true;
+  adsManager = e.getAdsManager(video, settings);
+
+  const T = google.ima.AdEvent.Type;
+  adsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, onAdError);
+  adsManager.addEventListener(T.CONTENT_PAUSE_REQUESTED, () => {
+    adPlaying = true;
+    video.pause();
+    video.controls = false;                   // no seeking content during ads
+    adContainer.style.pointerEvents = 'auto'; // ad clicks / skip button
+  });
+  adsManager.addEventListener(T.CONTENT_RESUME_REQUESTED, () => {
+    adPlaying = false;
+    adContainer.style.pointerEvents = 'none';
+    video.controls = true;
+    if (!contentEnded) playContent();
+  });
+  adsManager.addEventListener(T.STARTED, ev => log('Ad started: ' + (ev.getAd()?.getTitle() || '')));
+  adsManager.addEventListener(T.COMPLETE, () => log('Ad complete.'));
+  adsManager.addEventListener(T.ALL_ADS_COMPLETED, () => log('All ads done.'));
+
+  try {
+    adsManager.init(player.clientWidth, player.clientHeight, google.ima.ViewMode.NORMAL);
+    adsManager.setVolume(video.muted ? 0 : 1);
+    adsManager.start();
+  } catch (err) {
+    log('Ad start failed: ' + err);
+    startContent();
+  }
+}
+
+function onAdError(e) {
+  // No fill or a broken tag: never leave the viewer stuck, just play the video.
+  log('Ad error: ' + e.getError());
+  if (adsManager) adsManager.destroy();
+  startContent();
+}
+
+function startContent() {
+  adPlaying = false;
+  adContainer.style.pointerEvents = 'none';
+  video.controls = true;
+  if (!contentEnded) playContent();
+}
+
+function playContent() {
+  video.controls = true;
+  video.play().catch(() => {
+    // Browser refused autoplay (rare when muted): show a play button.
+    log('Autoplay blocked - showing play button.');
+    playBtn.style.display = 'block';
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (adsManager) {
+    const mode = document.fullscreenElement ? google.ima.ViewMode.FULLSCREEN : google.ima.ViewMode.NORMAL;
+    adsManager.resize(player.clientWidth, player.clientHeight, mode);
+  }
+});
+</script>
+</body>
+</html>
